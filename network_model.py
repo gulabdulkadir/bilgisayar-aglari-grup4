@@ -233,3 +233,4 @@ if __name__ == "__main__":
 
     except nx.NetworkXNoPath:
         print("Hata: Bu iki düğüm arasında yol bulunamadı!")
+        # Deneme 2
