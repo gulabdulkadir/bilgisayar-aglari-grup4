@@ -218,7 +218,7 @@ if __name__ == "__main__":
         ornek_yol = nx.shortest_path(ortam.graf, S, D)
         print(f"NetworkX Shortest Path: {ornek_yol}")
 
-        # 4. Bulunan yolun maliyetlerini hesaplayalım
+        # 4. Bulunan yolun maliyetlerini hesaplayalım.
         skor, gecikme, guv, kaynak = ortam.yol_maliyeti_hesapla(ornek_yol)
 
         print("\n--- HESAPLANAN METRİKLER ---")
