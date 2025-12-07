@@ -1,154 +1,171 @@
-# 1. NETWORKX (Ağ Grafiği Kütüphanesi)
-# Neden Gerekli?: Projenin temeli olan "Düğüm" (Node) ve "Bağlantı" (Link) yapısını kurmak için.
-# Projedeki Görevi:
-# - PDF [25]: Erdos-Renyi G(n,p) modeline göre 250 düğümlü karmaşık ağın oluşturulmasını sağlar.
-# - PDF [26]: Ağın "bağlı" (connected) olup olmadığını kontrol eder (nx.is_connected).
-# - Düğümler ve kenarlar üzerindeki verileri (attribute) saklar.
-import networkx as nx
+import networkx as nx  # Ağ topolojisini (Graf) oluşturmak ve düğüm/bağlantı ilişkilerini yönetmek için gerekli.
+import math            # PDF'teki Güvenilirlik hesabında -log (logaritma) işlemi yapmak için gerekli.
+import pandas as pd    # Verilen CSV dosyalarını (Node, Edge, Demand) okuyup tablo olarak işlemek için gerekli.
 
-# 2. RANDOM (Rastgele Sayı Üreteci)
-# Neden Gerekli?: Proje "Deterministik" (sabit) değil, "Stokastik" (rastgele) değerler üzerine kurulu.
-# Projedeki Görevi:
-# - PDF [22]: Ağ topolojisinin her çalıştırıldığında rastgele oluşturulmasını sağlar.
-# - PDF [29, 30, 33, 34]: Bant genişliği, gecikme ve güvenilirlik değerlerini
-#   belirtilen aralıklarda (örn: 3ms - 15ms) rastgele atar.
-# - PDF [116]: "Seed" (tohum) mekanizması ile deneylerin tekrarlanabilir olmasını sağlar (random.seed).
-import random
-
-# 3. MATH (Matematik Fonksiyonları)
-# Neden Gerekli?: Özellikle "Güvenilirlik" hesabındaki özel bir dönüşüm işlemi için.
-# Projedeki Görevi:
-# - PDF [48-52]: Güvenilirlik normalde çarpımsal (multiplicative) bir metriktir (0.99 * 0.98...).
-# - PDF [52]: Ancak optimizasyon algoritmaları "toplama" ile daha iyi çalışır.
-# - Math kütüphanesi, "-math.log(guvenilirlik)" fonksiyonu ile bu çarpma işlemini
-#   toplama işlemine (Cost) dönüştürmek için kullanılır.
-import math
 # =============================================================================
-DUGUM_SAYISI = 250  # N: Toplam düğüm sayısı
-BAGLANTI_OLASILIGI = 0.4  # P: Bağlantı olasılığı (Erdos-Renyi için)
+# AYARLAR VE SABİTLER
+# =============================================================================
+# Kodun tamamında kullanılacak dosya isimlerini burada sabitliyoruz (Değişiklik gerekirse tek yerden yapılır).
+DUGUM_DOSYASI = "BSM307_317_Guz2025_TermProject_NodeData.csv"    # Düğüm özelliklerini (işlem süresi, güvenilirlik) tutan dosya.
+KENAR_DOSYASI = "BSM307_317_Guz2025_TermProject_EdgeData.csv"    # Bağlantı özelliklerini (hız, gecikme, maliyet) tutan dosya.
+TALEP_DOSYASI = "BSM307_317_Guz2025_TermProject_DemandData.csv"  # Kimden kime ne kadar veri gideceğini belirten talep dosyası.
 
 
 class AgOrtami:
     """
-    Bu sınıf, projenin fiziksel ağ altyapısını oluşturur, yönetir ve
-    yol maliyetlerini hesaplar.
-
-    Özellikler:
-    - Erdos-Renyi modeli ile topoloji oluşturma.
-    - Seed (tohum) desteği ile tekrarlanabilir deneyler.
-    - PDF'teki kısıtlara göre bant genişliği, gecikme ve güvenilirlik atamaları.
+    Bu sınıf, hocanın verdiği CSV dosyalarından verileri okuyarak
+    gerçek ağ topolojisini oluşturur ve yönetir.
     """
 
-    def __init__(self, seed=42):
-        """
-        Başlatıcı metod.
-
-        Parametreler:
-            seed (int): Rastgele sayı üretecinin başlangıç değeri.
-                        Aynı seed değeri her zaman aynı ağ yapısını üretir.
-                        (PDF 'Teslim Edilecekler' maddesi gereği gereklidir.)
-        """
-        self.seed = seed
+    def __init__(self):
+        # Boş bir graf oluşturuyoruz.
         self.graf = nx.Graph()
 
-        # Rastgeleliği sabitle (Reprodüklibilite için)
-        random.seed(self.seed)
-
-        # PDF [66-68]: Varsayılan Optimiazsyon Ağırlıkları
-        # Bu değerler kullanıcı arayüzünden (GUI) dinamik olarak değiştirilebilir.
-        self.w_gecikme = 0.33  # Gecikme ağırlığı
-        self.w_guvenilirlik = 0.33  # Güvenilirlik ağırlığı
-        self.w_kaynak = 0.34  # Kaynak kullanım ağırlığı
-
-    def topoloji_olustur(self):
+        # Optimizasyon Ağırlıkları (Fitness Hesaplama Katsayıları)
+        # PDF'te "Toplamları 1 olmalı" kuralı vardır.
+        # Başlangıçta hepsine eşit önem vermek için (1/3) yaklaşık değerler girdik.
+        # Toplamın tam 1.00 olması için sonuncuyu 0.34 yaptık (0.33 + 0.33 + 0.34 = 1.0).
+        self.w_gecikme = 0.33  # Gecikme (Delay) önemi
+        self.w_guvenilirlik = 0.33  # Güvenilirlik (Reliability) önemi
+        self.w_kaynak = 0.34  # Kaynak (Bandwidth) maliyeti önemi
+    def verileri_yukle_ve_agi_kur(self):
         """
-        PDF [22, 26]: Rastgele ve 'bağlı' (connected) bir ağ oluşturur.
-        Erdos-Renyi G(n,p) modeli kullanılır.
+        Bu fonksiyon CSV dosyalarını okur ve NetworkX grafiğine dönüştürür.
+        Rastgele üretim YERİNE bu fonksiyon kullanılır.
         """
-        print(f"Topoloji oluşturuluyor... (Seed: {self.seed}, N={DUGUM_SAYISI}, P={BAGLANTI_OLASILIGI})")
+        print("📂 Veriler okunuyor ve ağ oluşturuluyor...")
 
-        while True:
-            # NetworkX'in Erdos-Renyi fonksiyonuna da seed veriyoruz.
-            # Not: P=0.4 çok yüksek bir olasılık olduğu için ağın kopuk olma ihtimali
-            # matematiksel olarak neredeyse sıfırdır, ama kural gereği kontrol ediyoruz.
-            self.graf = nx.erdos_renyi_graph(n=DUGUM_SAYISI, p=BAGLANTI_OLASILIGI, seed=self.seed)
+        # ---------------------------------------------------------
+        # ADIM 1: DÜĞÜM (NODE) VERİLERİNİ YÜKLEME
+        # ---------------------------------------------------------
+        try:
+            # Pandas kütüphanesi ile CSV dosyasını okuyup 'DataFrame' (akıllı tablo) formatına çeviriyoruz.
+            # Parametrelerin Anlamları:
+            # 1. DUGUM_DOSYASI: Okunacak dosyanın adı.
+            # 2. sep=';'      : Sütunların noktalı virgül ile ayrıldığını belirtir (Normalde virgüldür).
+            # 3. decimal=','  : Sayılardaki ondalık ayracının virgül olduğunu belirtir (Python normalde nokta '.' bekler).
+            #                   Bunu yapmazsak Python sayıları 'metin' sanar ve matematik işlemi yapamayız.
+            dugum_verisi = pd.read_csv(DUGUM_DOSYASI, sep=';', decimal=',')
 
-            # PDF Şartı: "Grafiğin bağlı (connected) olduğundan emin olunmalı"
-            if nx.is_connected(self.graf):
-                break
-            else:
-                print("Uyarı: Oluşan graf bağlı değil (kopuk). Seed değiştirilip tekrar deneniyor...")
-                self.seed += 1  # Sonsuz döngüye girmemek için seed'i değiştir
+            # -------------------------------------------------------------------------
+            # DÖNGÜ BAŞLANGICI
+            # -------------------------------------------------------------------------
+            # dugum_verisi: CSV'den okuduğumuz dev tablonun tamamı (DataFrame).
+            # .iterrows() : Bu tabloyu parçalar ve her seferinde bize BİR SATIR verir.
+            #               Döngü her döndüğünde sıradaki satıra geçer.
+            for indeks, satir in dugum_verisi.iterrows():
+                # indeks : O an kaçıncı satırdayız? (0, 1, 2... diye sayar).
+                #          (Genelde kullanmayız ama fonksiyon mecbur verir).
 
-        # Topoloji iskeleti oluştuktan sonra, fiziksel özellikleri (Delay, BW vb.) ata
-        self._dugum_ozelliklerini_ata()
-        self._baglanti_ozelliklerini_ata()
+                # satir  : O anki satırın içindeki tüm bilgiler (node_id, s_ms, r_node).
+                #          Bu bir paket gibidir, içinden istediğimiz sütunu seçeriz.
 
-        print("✅ Ağ başarıyla oluşturuldu ve tüm fiziksel değerler atandı.")
+                # ---------------------------------------------------------------------
+                # VERİYİ ÇEKME VE TEMİZLEME
+                # ---------------------------------------------------------------------
+                # 1. satir['node_id']: O satırdaki 'node_id' sütununda ne yazıyorsa onu getir.
+                # 2. int(...)        : Gelen veriyi TAM SAYIYA çevir.
+                # CSV dosyasında sayılar tam sayı (örn: 5) görünse bile,
+                # Pandas bazen bunları ondalıklı (örn: 5.0) olarak okuyabilir.
+                # int() diyerek "Bunu kesinlikle tam sayı yap" diyoruz.
+                # Bu sayede ileride "5.0" ile "5" karışıklığı (Type Mismatch) çıkmasını engelliyoruz.
+                dugum_id = int(satir['node_id'])
+
+                # CSV'deki sütunları değişkenlere alıyoruz
+                islem_suresi = float(satir['s_ms'])  # İşlem süresi (milisaniye)
+                guvenilirlik = float(satir['r_node'])  # Düğüm güvenilirliği (0-1 arası)
+
+                # Düğümü grafa ekle ve özelliklerini kaydet
+                self.graf.add_node(dugum_id)
+                self.graf.nodes[dugum_id]['islem_suresi'] = islem_suresi
+                self.graf.nodes[dugum_id]['guvenilirlik'] = guvenilirlik
+
+                # Matematiksel Dönüşüm: Güvenilirlik çarpımsal olduğu için (-log) alarak
+                # toplamsal maliyete çeviriyoruz. Algoritma toplama yapabilsin diye.
+                self.graf.nodes[dugum_id]['guv_maliyeti'] = -math.log(guvenilirlik)
+
+            print(f"✅ {len(dugum_verisi)} adet düğüm başarıyla yüklendi.")
+
+        except FileNotFoundError:
+            print(f"❌ HATA: '{DUGUM_DOSYASI}' dosyası bulunamadı! Lütfen dosya ismini kontrol et.")
+            return
+
+        # ---------------------------------------------------------
+        # ADIM 2: KENAR (LINK) VERİLERİNİ YÜKLEME
+        # ---------------------------------------------------------
+        try:
+            kenar_verisi = pd.read_csv(KENAR_DOSYASI, sep=';', decimal=',')
+
+            for indeks, satir in kenar_verisi.iterrows():
+                kaynak_dugum = int(satir['src'])  # Nereden (Source)
+                hedef_dugum = int(satir['dst'])  # Nereye (Destination)
+
+                # Özellikleri alıyoruz
+                kapasite = float(satir['capacity_mbps'])  # Bant genişliği
+                gecikme = float(satir['delay_ms'])  # Kablo gecikmesi
+                guvenilirlik = float(satir['r_link'])  # Hat güvenilirliği
+
+                # Bağlantıyı (Edge) grafa ekle
+                self.graf.add_edge(kaynak_dugum, hedef_dugum)
+
+                # Özellikleri kenara kaydet
+                self.graf[kaynak_dugum][hedef_dugum]['bant_genisligi'] = kapasite
+                self.graf[kaynak_dugum][hedef_dugum]['gecikme'] = gecikme
+                self.graf[kaynak_dugum][hedef_dugum]['guvenilirlik'] = guvenilirlik
+
+                # KAYNAK MALİYETİ HESABI (PDF Formülü)
+                # Formül: 1000 / Bant Genişliği
+                # Bant genişliği ne kadar yüksekse maliyet o kadar az olur.
+                self.graf[kaynak_dugum][hedef_dugum]['kaynak_maliyeti'] = 1000.0 / kapasite
+
+                # GÜVENİLİRLİK MALİYETİ HESABI
+                self.graf[kaynak_dugum][hedef_dugum]['guv_maliyeti'] = -math.log(guvenilirlik)
+
+            print(f"✅ {len(kenar_verisi)} adet bağlantı başarıyla yüklendi.")
+
+        except FileNotFoundError:
+            print(f"❌ HATA: '{KENAR_DOSYASI}' dosyası bulunamadı!")
+            return
+
+        # ---------------------------------------------------------
+        # ADIM 3: AĞ KONTROLÜ
+        # ---------------------------------------------------------
+        if nx.is_connected(self.graf):
+            print("Bilgi: Ağ sorunsuz oluşturuldu. Tüm düğümler birbirine erişebilir.")
+        else:
+            print("UYARI: Ağ kopuk! Bazı düğümler arasında yol yok.")
+
         return self.graf
 
-    def _dugum_ozelliklerini_ata(self):
+    def talep_listesini_getir(self):
         """
-        PDF [27-30]: Her düğüme işlem süresi ve güvenilirlik değerlerini atar.
+        DemandData.csv dosyasındaki 'Kimden -> Kime ne kadar trafik lazım'
+        bilgisini okur ve liste olarak verir.
         """
-        for dugum in self.graf.nodes():
-            # 1. İşlem Süresi (Processing Delay)
-            # PDF [29]: [0.5 ms - 2.0 ms] arasında rastgele bir değer.
-            islem_suresi = random.uniform(0.5, 2.0)
+        try:
+            talep_verisi = pd.read_csv(TALEP_DOSYASI, sep=';', decimal=',')
+            talep_listesi = []
 
-            # 2. Düğüm Güvenilirliği (Node Reliability)
-            # PDF [30]: [0.95 - 0.999] arasında rastgele bir değer.
-            guvenilirlik = random.uniform(0.95, 0.999)
+            for indeks, satir in talep_verisi.iterrows():
+                # Her bir talep satırını sözlük (dictionary) yapıyoruz
+                talep = {
+                    'kaynak': int(satir['src']),
+                    'hedef': int(satir['dst']),
+                    'miktar': float(satir['demand_mbps'])
+                }
+                talep_listesi.append(talep)
 
-            # Değerleri düğüm nesnesine kaydet
-            self.graf.nodes[dugum]['islem_suresi'] = islem_suresi
-            self.graf.nodes[dugum]['guvenilirlik'] = guvenilirlik
+            return talep_listesi
 
-            # PDF [52]: Minimizasyon problemi için Güvenilirlik Maliyeti (-log dönüşümü)
-            # Çarpımsal metrikleri toplamsal hale getirmek için -ln(x) kullanılır.
-            self.graf.nodes[dugum]['guv_maliyeti'] = -math.log(guvenilirlik)
-
-    def _baglanti_ozelliklerini_ata(self):
-        """
-        PDF [31-35]: Her bağlantıya bant genişliği, gecikme ve güvenilirlik atar.
-        """
-        for u, v in self.graf.edges():
-            # 1. Bant Genişliği (Bandwidth)
-            # PDF [33]: [100 Mbps - 1000 Mbps] arasında rastgele.
-            bant_genisligi = random.uniform(100, 1000)
-
-            # 2. Bağlantı Gecikmesi (Link Delay)
-            # PDF [34]: [3 ms - 15 ms] arasında rastgele.
-            link_gecikmesi = random.uniform(3, 15)
-
-            # 3. Bağlantı Güvenilirliği (Link Reliability)
-            # PDF [35]: [0.95 - 0.999] arasında rastgele.
-            link_guvenilirligi = random.uniform(0.95, 0.999)
-
-            # Değerleri kenar (edge) nesnesine kaydet
-            self.graf[u][v]['bant_genisligi'] = bant_genisligi
-            self.graf[u][v]['gecikme'] = link_gecikmesi
-            self.graf[u][v]['guvenilirlik'] = link_guvenilirligi
-
-            # PDF [57]: Kaynak Maliyeti (Minimizasyon için)
-            # Formül: ResourceCost = 1 Gbps / Bandwidth
-            # 1 Gbps = 1000 Mbps olduğundan: 1000 / bant_genisligi
-            self.graf[u][v]['kaynak_maliyeti'] = 1000.0 / bant_genisligi
-
-            # PDF [52]: Güvenilirlik Maliyeti (-log dönüşümü)
-            self.graf[u][v]['guv_maliyeti'] = -math.log(link_guvenilirligi)
+        except FileNotFoundError:
+            print(f"❌ HATA: '{TALEP_DOSYASI}' dosyası bulunamadı.")
+            return []
 
     def yol_maliyeti_hesapla(self, yol):
         """
-        PDF [38-68]: Verilen bir yolun (path) toplam maliyetini hesaplar.
-
-        Parametreler:
-            yol (list): Düğüm ID'lerinden oluşan liste. Örn: [0, 5, 24, 249]
-
-        Dönüş:
-            (toplam_skor, toplam_gecikme, toplam_guvenilirlik_maliyeti, toplam_kaynak_maliyeti)
+        Verilen bir yolun (path) toplam maliyetini (Fitness) hesaplar.
+        Parametre: yol -> [0, 5, 24] gibi düğüm listesi.
         """
-        # Geçersiz veya çok kısa yol kontrolü
         if not yol or len(yol) < 2:
             return float('inf'), 0, 0, 0
 
@@ -156,81 +173,82 @@ class AgOrtami:
         toplam_guv_maliyeti = 0
         toplam_kaynak_maliyeti = 0
 
-        # --- A. KENAR (LINK) MALİYETLERİ ---
-        # PDF [42, 52, 57]: Yol üzerindeki tüm bağlantıların değerleri toplanır.
+        # --- A. YOL ÜZERİNDEKİ KENARLARIN (LINK) MALİYETİ ---
         for i in range(len(yol) - 1):
-            u, v = yol[i], yol[i + 1]
-            kenar_verisi = self.graf[u][v]
+            u = yol[i]
+            v = yol[i + 1]
+            baglanti = self.graf[u][v]  # O iki düğüm arasındaki hat bilgisi
 
-            toplam_gecikme += kenar_verisi['gecikme']
-            toplam_guv_maliyeti += kenar_verisi['guv_maliyeti']
-            toplam_kaynak_maliyeti += kenar_verisi['kaynak_maliyeti']
+            toplam_gecikme += baglanti['gecikme']
+            toplam_guv_maliyeti += baglanti['guv_maliyeti']
+            toplam_kaynak_maliyeti += baglanti['kaynak_maliyeti']
 
-        # --- B. DÜĞÜM (NODE) MALİYETLERİ ---
-        kaynak_dugum = yol[0]  # Source (S)
-        hedef_dugum = yol[-1]  # Destination (D)
-        ara_dugumler = yol[1:-1]  # Yoldaki diğer düğümler
+        # --- B. DÜĞÜMLERİN (NODE) KENDİ MALİYETLERİ ---
+        # 1. Güvenilirlik: Yol üzerindeki HER düğüm risk oluşturur, hepsi toplanır.
+        for dugum_id in yol:
+            toplam_guv_maliyeti += self.graf.nodes[dugum_id]['guv_maliyeti']
 
-        # 1. Güvenilirlik: PDF'e göre S ve D dahil TÜM düğümlerin güvenilirliği hesaba katılır.
-        toplam_guv_maliyeti += self.graf.nodes[kaynak_dugum]['guv_maliyeti']
-        toplam_guv_maliyeti += self.graf.nodes[hedef_dugum]['guv_maliyeti']
+        # 2. İşlem Gecikmesi: Sadece ARADAKİ düğümlerde vakit kaybedilir.
+        # Kaynak (ilk) ve Hedef (son) düğümde işlem gecikmesi sayılmaz (PDF kuralı).
+        ara_dugumler = yol[1:-1]
+        for dugum_id in ara_dugumler:
+            toplam_gecikme += self.graf.nodes[dugum_id]['islem_suresi']
 
-        # 2. İşlem Gecikmesi: PDF [45, 49]
-        # ÖNEMLİ KURAL: "Kaynak S ve Hedef D hariç tüm işlem gecikmelerinin toplamı"
-        for dugum in ara_dugumler:
-            dugum_verisi = self.graf.nodes[dugum]
+        # --- C. GENEL SKOR (FITNESS) HESABI ---
+        # Ağırlıklı toplama yöntemi ile tek bir skor üretiyoruz.
+        genel_skor = (self.w_gecikme * toplam_gecikme) + \
+                     (self.w_guvenilirlik * toplam_guv_maliyeti) + \
+                     (self.w_kaynak * toplam_kaynak_maliyeti)
 
-            toplam_gecikme += dugum_verisi['islem_suresi']  # Sadece arada ekle
-            toplam_guv_maliyeti += dugum_verisi['guv_maliyeti']  # Herkes için ekle
-
-        # --- C. TOPLAM SKOR (FITNESS FUNCTION) ---
-        # PDF [66]: Weighted Sum Method (Ağırlıklı Toplam Yöntemi)
-        # TotalCost = (W_delay * Delay) + (W_rel * RelCost) + (W_res * ResCost)
-        toplam_skor = (self.w_gecikme * toplam_gecikme) + \
-                      (self.w_guvenilirlik * toplam_guv_maliyeti) + \
-                      (self.w_kaynak * toplam_kaynak_maliyeti)
-
-        return toplam_skor, toplam_gecikme, toplam_guv_maliyeti, toplam_kaynak_maliyeti
+        return genel_skor, toplam_gecikme, toplam_guv_maliyeti, toplam_kaynak_maliyeti
 
 
 # =============================================================================
-# MODÜL TEST ALANI
-# Bu dosya doğrudan çalıştırıldığında (import edilmediğinde) burası çalışır.
+# ÇALIŞTIRMA KISMI (MAIN)
 # =============================================================================
 if __name__ == "__main__":
-    print("\n--- AĞ OLUŞTURUCU TESTİ BAŞLIYOR ---")
+    print("\n--- PROJE BAŞLATILIYOR (VERİ OKUMA MODU) ---")
 
-    # 1. Ortamı Başlat (Seed=42 ile)
-    # Seed verdiğimiz için her çalıştırmada AYNI sonuçları görmeliyiz.
-    ortam = AgOrtami(seed=42)
-    ortam.topoloji_olustur()
+    # 1. Sınıfı oluştur
+    ag_yoneticisi = AgOrtami()
 
-    # 2. Rastgele bir Kaynak ve Hedef seç (Test amaçlı)
-    tum_dugumler = list(ortam.graf.nodes())
-    S = tum_dugumler[0]
-    D = tum_dugumler[-1]
+    # 2. Dosyaları oku ve ağı kur
+    ag_yoneticisi.verileri_yukle_ve_agi_kur()
 
-    print(f"\nTest Rotası: {S} -> {D}")
+    # 3. Talepleri oku
+    talepler = ag_yoneticisi.talep_listesini_getir()
 
-    # 3. NetworkX'in kendi en kısa yol algoritması ile bir yol bulalım
-    # Not: Bu, bizim maliyet fonksiyonumuzu değil, sadece adım sayısını baz alır.
-    try:
-        ornek_yol = nx.shortest_path(ortam.graf, S, D)
-        print(f"NetworkX Shortest Path: {ornek_yol}")
+    if len(talepler) > 0:
+        # Örnek olarak listedeki İLK talebi alıp test edelim
+        ornek_talep = talepler[0]
+        src = ornek_talep['kaynak']
+        dst = ornek_talep['hedef']
+        bw = ornek_talep['miktar']
 
-        # 4. Bulunan yolun maliyetlerini hesaplayalım.
-        skor, gecikme, guv, kaynak = ortam.yol_maliyeti_hesapla(ornek_yol)
+        print(f"\n🧪 TEST: Talep Dosyasından İlk Kayıt Deneniyor...")
+        print(f"   Kaynak: {src} -> Hedef: {dst} | İstenen Hız: {bw} Mbps")
 
-        print("\n--- HESAPLANAN METRİKLER ---")
-        print(f"1. Toplam Gecikme (Delay): {gecikme:.2f} ms")
-        # Matematiksel ters işlem yapıyoruz: e üzeri (-maliyet)
-        gercek_oran = math.exp(-guv) * 100
-        # Hem yüzdeyi hem de parantez içinde maliyeti yazdırıyoruz
-        print(f"2. Güvenilirlik: %{gercek_oran:.2f} (Maliyet: {guv:.4f})")
-        print(f"3. Kaynak Kullanımı (Maliyet): {kaynak:.2f}")
-        print(f"--------------------------------------")
-        print(f"★ GENEL SKOR (Fitness): {skor:.4f}")
+        try:
+            # NetworkX kütüphanesinin hazır fonksiyonu ile en kısa yolu buluyoruz.
+            # (Bu sadece test amaçlıdır, projenin ilerleyen kısmında burayı senin algoritman yapacak)
+            bulunan_yol = nx.shortest_path(ag_yoneticisi.graf, src, dst)
+            print(f"   📍 Bulunan Yol: {bulunan_yol}")
 
-    except nx.NetworkXNoPath:
-        print("Hata: Bu iki düğüm arasında yol bulunamadı!")
-        # Deneme 2
+            # Bu yolun maliyetini hesaplatıyoruz
+            skor, gecikme, guv_maliyet, kaynak_maliyet = ag_yoneticisi.yol_maliyeti_hesapla(bulunan_yol)
+
+            # Sonuçları ekrana yaz
+            # Güvenilirliği tekrar yüzdeye çeviriyoruz (e üzeri -maliyet)
+            guvenilirlik_yuzde = math.exp(-guv_maliyet) * 100
+
+            print("\n📊 HESAPLANAN DEĞERLER:")
+            print(f"   1. Toplam Gecikme    : {gecikme:.2f} ms")
+            print(f"   2. Toplam Güvenilirlik: %{guvenilirlik_yuzde:.4f}")
+            print(f"   3. Kaynak Maliyeti   : {kaynak_maliyet:.2f}")
+            print(f"   --------------------------------------")
+            print(f"   ★ GENEL SKOR (Fitness): {skor:.4f} (Daha düşük daha iyi)")
+
+        except nx.NetworkXNoPath:
+            print("   ⚠️ Hata: Bu iki düğüm arasında fiziksel bir yol yok!")
+    else:
+        print("   ⚠️ Talep listesi boş geldi, dosya içeriğini kontrol edin.")
