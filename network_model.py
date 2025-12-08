@@ -1,13 +1,13 @@
 import networkx as nx  # Ağ topolojisini (Graf) oluşturmak ve düğüm/bağlantı ilişkilerini yönetmek için gerekli.
-import math            # PDF'teki Güvenilirlik hesabında -log (logaritma) işlemi yapmak için gerekli.
-import pandas as pd    # Verilen CSV dosyalarını (Node, Edge, Demand) okuyup tablo olarak işlemek için gerekli.
+import math  # PDF'teki Güvenilirlik hesabında -log (logaritma) işlemi yapmak için gerekli.
+import pandas as pd  # Verilen CSV dosyalarını (Node, Edge, Demand) okuyup tablo olarak işlemek için gerekli.
 
 # =============================================================================
 # AYARLAR VE SABİTLER
 # =============================================================================
 # Kodun tamamında kullanılacak dosya isimlerini burada sabitliyoruz (Değişiklik gerekirse tek yerden yapılır).
-DUGUM_DOSYASI = "BSM307_317_Guz2025_TermProject_NodeData.csv"    # Düğüm özelliklerini (işlem süresi, güvenilirlik) tutan dosya.
-KENAR_DOSYASI = "BSM307_317_Guz2025_TermProject_EdgeData.csv"    # Bağlantı özelliklerini (hız, gecikme, maliyet) tutan dosya.
+DUGUM_DOSYASI = "BSM307_317_Guz2025_TermProject_NodeData.csv"  # Düğüm özelliklerini (işlem süresi, güvenilirlik) tutan dosya.
+KENAR_DOSYASI = "BSM307_317_Guz2025_TermProject_EdgeData.csv"  # Bağlantı özelliklerini (hız, gecikme, maliyet) tutan dosya.
 TALEP_DOSYASI = "BSM307_317_Guz2025_TermProject_DemandData.csv"  # Kimden kime ne kadar veri gideceğini belirten talep dosyası.
 
 
@@ -28,6 +28,7 @@ class AgOrtami:
         self.w_gecikme = 0.33  # Gecikme (Delay) önemi
         self.w_guvenilirlik = 0.33  # Güvenilirlik (Reliability) önemi
         self.w_kaynak = 0.34  # Kaynak (Bandwidth) maliyeti önemi
+
     def verileri_yukle_ve_agi_kur(self):
         """
         Bu fonksiyon CSV dosyalarını okur ve NetworkX grafiğine dönüştürür.
@@ -41,34 +42,17 @@ class AgOrtami:
         try:
             # Pandas kütüphanesi ile CSV dosyasını okuyup 'DataFrame' (akıllı tablo) formatına çeviriyoruz.
             # Parametrelerin Anlamları:
-            # 1. DUGUM_DOSYASI: Okunacak dosyanın adı.
-            # 2. sep=';'      : Sütunların noktalı virgül ile ayrıldığını belirtir (Normalde virgüldür).
-            # 3. decimal=','  : Sayılardaki ondalık ayracının virgül olduğunu belirtir (Python normalde nokta '.' bekler).
-            #                   Bunu yapmazsak Python sayıları 'metin' sanar ve matematik işlemi yapamayız.
+            # sep=';'      : Sütunların noktalı virgül ile ayrıldığını belirtir.
+            # decimal=','  : Sayılardaki ondalık ayracının virgül olduğunu belirtir.
             dugum_verisi = pd.read_csv(DUGUM_DOSYASI, sep=';', decimal=',')
 
             # -------------------------------------------------------------------------
             # DÖNGÜ BAŞLANGICI
             # -------------------------------------------------------------------------
-            # dugum_verisi: CSV'den okuduğumuz dev tablonun tamamı (DataFrame).
-            # .iterrows() : Bu tabloyu parçalar ve her seferinde bize BİR SATIR verir.
-            #               Döngü her döndüğünde sıradaki satıra geçer.
+            # .iterrows() : Tabloyu satır satır okumamızı sağlar.
             for indeks, satir in dugum_verisi.iterrows():
-                # indeks : O an kaçıncı satırdayız? (0, 1, 2... diye sayar).
-                #          (Genelde kullanmayız ama fonksiyon mecbur verir).
-
-                # satir  : O anki satırın içindeki tüm bilgiler (node_id, s_ms, r_node).
-                #          Bu bir paket gibidir, içinden istediğimiz sütunu seçeriz.
-
-                # ---------------------------------------------------------------------
                 # VERİYİ ÇEKME VE TEMİZLEME
-                # ---------------------------------------------------------------------
-                # 1. satir['node_id']: O satırdaki 'node_id' sütununda ne yazıyorsa onu getir.
-                # 2. int(...)        : Gelen veriyi TAM SAYIYA çevir.
-                # CSV dosyasında sayılar tam sayı (örn: 5) görünse bile,
-                # Pandas bazen bunları ondalıklı (örn: 5.0) olarak okuyabilir.
-                # int() diyerek "Bunu kesinlikle tam sayı yap" diyoruz.
-                # Bu sayede ileride "5.0" ile "5" karışıklığı (Type Mismatch) çıkmasını engelliyoruz.
+                # satir['node_id']: O satırdaki id'yi alır. int() ile tam sayıya çevrilir.
                 dugum_id = int(satir['node_id'])
 
                 # CSV'deki sütunları değişkenlere alıyoruz
@@ -118,7 +102,7 @@ class AgOrtami:
                 # Bant genişliği ne kadar yüksekse maliyet o kadar az olur.
                 self.graf[kaynak_dugum][hedef_dugum]['kaynak_maliyeti'] = 1000.0 / kapasite
 
-                # GÜVENİLİRLİK MALİYETİ HESABI
+                # GÜVENİLİRLİK MALİYETİ HESABI (-log işlemi)
                 self.graf[kaynak_dugum][hedef_dugum]['guv_maliyeti'] = -math.log(guvenilirlik)
 
             print(f"✅ {len(kenar_verisi)} adet bağlantı başarıyla yüklendi.")
@@ -161,10 +145,19 @@ class AgOrtami:
             print(f"❌ HATA: '{TALEP_DOSYASI}' dosyası bulunamadı.")
             return []
 
-    def yol_maliyeti_hesapla(self, yol):
+    # =========================================================================
+    # 🔥🔥🔥 GÜNCELLENEN KISIM BURASI (DEMAND KONTROLÜ EKLENDİ) 🔥🔥🔥
+    # =========================================================================
+    def yol_maliyeti_hesapla(self, yol, istenen_bw=0):
         """
         Verilen bir yolun (path) toplam maliyetini (Fitness) hesaplar.
-        Parametre: yol -> [0, 5, 24] gibi düğüm listesi.
+
+        Parametreler:
+        - yol: [0, 5, 24] gibi düğüm listesi.
+        - istenen_bw: Bu yoldan geçirilmek istenen veri miktarı (Mbps).
+
+        YENİ ÖZELLİK: Eğer yolun kapasitesi 'istenen_bw'den düşükse
+        o yola SONSUZ CEZA (float('inf')) verir.
         """
         if not yol or len(yol) < 2:
             return float('inf'), 0, 0, 0
@@ -173,12 +166,21 @@ class AgOrtami:
         toplam_guv_maliyeti = 0
         toplam_kaynak_maliyeti = 0
 
-        # --- A. YOL ÜZERİNDEKİ KENARLARIN (LINK) MALİYETİ ---
+        # --- A. YOL ÜZERİNDEKİ KENARLARIN (LINK) KONTROLÜ VE MALİYETİ ---
         for i in range(len(yol) - 1):
             u = yol[i]
             v = yol[i + 1]
             baglanti = self.graf[u][v]  # O iki düğüm arasındaki hat bilgisi
 
+            # 🛑 DEMAND (KAPASİTE) KONTROLÜ 🛑
+            # Eğer hattın mevcut kapasitesi (Bandwidth), bizim taşımak istediğimiz yükten AZ ise;
+            # Bu yol fiziksel olarak veriyi taşıyamaz.
+            if baglanti['bant_genisligi'] < istenen_bw:
+                # Yolu geçersiz kılmak için SONSUZ maliyet döndür.
+                # Algoritma bu sayede "Bu yol imkansız, bunu seçme" der.
+                return float('inf'), float('inf'), float('inf'), float('inf')
+
+            # Kapasite yetiyorsa normal maliyetleri toplayarak devam et
             toplam_gecikme += baglanti['gecikme']
             toplam_guv_maliyeti += baglanti['guv_maliyeti']
             toplam_kaynak_maliyeti += baglanti['kaynak_maliyeti']
@@ -207,7 +209,7 @@ class AgOrtami:
 # ÇALIŞTIRMA KISMI (MAIN)
 # =============================================================================
 if __name__ == "__main__":
-    print("\n--- PROJE BAŞLATILIYOR (VERİ OKUMA MODU) ---")
+    print("\n--- PROJE BAŞLATILIYOR (DEMAND KONTROLLÜ MOD) ---")
 
     # 1. Sınıfı oluştur
     ag_yoneticisi = AgOrtami()
@@ -229,24 +231,28 @@ if __name__ == "__main__":
         print(f"   Kaynak: {src} -> Hedef: {dst} | İstenen Hız: {bw} Mbps")
 
         try:
-            # NetworkX kütüphanesinin hazır fonksiyonu ile en kısa yolu buluyoruz.
-            # (Bu sadece test amaçlıdır, projenin ilerleyen kısmında burayı senin algoritman yapacak)
+            # Şimdilik en kısa yolu buluyoruz (Henüz Genetik Algoritma yok, test amaçlı)
             bulunan_yol = nx.shortest_path(ag_yoneticisi.graf, src, dst)
-            print(f"   📍 Bulunan Yol: {bulunan_yol}")
+            print(f"   📍 Denenen Yol: {bulunan_yol}")
 
-            # Bu yolun maliyetini hesaplatıyoruz
-            skor, gecikme, guv_maliyet, kaynak_maliyet = ag_yoneticisi.yol_maliyeti_hesapla(bulunan_yol)
+            # 🔥 DİKKAT: Artık 'istenen_bw' parametresini de fonksiyona gönderiyoruz!
+            skor, gecikme, guv_maliyet, kaynak_maliyet = ag_yoneticisi.yol_maliyeti_hesapla(bulunan_yol, istenen_bw=bw)
 
-            # Sonuçları ekrana yaz
-            # Güvenilirliği tekrar yüzdeye çeviriyoruz (e üzeri -maliyet)
-            guvenilirlik_yuzde = math.exp(-guv_maliyet) * 100
+            # Eğer fonksiyon bize SONSUZ (inf) döndürdüyse, kapasite yetmemiş demektir.
+            if skor == float('inf'):
+                print("\n❌ SONUÇ: BU YOL BAŞARISIZ!")
+                print("   Sebep: Yol üzerindeki bir veya daha fazla bağlantının kapasitesi yetersiz.")
+                print("   Algoritma bu yolu 'Ceza Puanı' sebebiyle elemeli.")
+            else:
+                # Güvenilirliği tekrar yüzdeye çeviriyoruz (e üzeri -maliyet)
+                guvenilirlik_yuzde = math.exp(-guv_maliyet) * 100
 
-            print("\n📊 HESAPLANAN DEĞERLER:")
-            print(f"   1. Toplam Gecikme    : {gecikme:.2f} ms")
-            print(f"   2. Toplam Güvenilirlik: %{guvenilirlik_yuzde:.4f}")
-            print(f"   3. Kaynak Maliyeti   : {kaynak_maliyet:.2f}")
-            print(f"   --------------------------------------")
-            print(f"   ★ GENEL SKOR (Fitness): {skor:.4f} (Daha düşük daha iyi)")
+                print("\n✅ SONUÇ: BU YOL UYGUN!")
+                print(f"   1. Toplam Gecikme    : {gecikme:.2f} ms")
+                print(f"   2. Toplam Güvenilirlik: %{guvenilirlik_yuzde:.4f}")
+                print(f"   3. Kaynak Maliyeti   : {kaynak_maliyet:.2f}")
+                print(f"   --------------------------------------")
+                print(f"   ★ GENEL SKOR (Fitness): {skor:.4f} (Daha düşük daha iyi)")
 
         except nx.NetworkXNoPath:
             print("   ⚠️ Hata: Bu iki düğüm arasında fiziksel bir yol yok!")
