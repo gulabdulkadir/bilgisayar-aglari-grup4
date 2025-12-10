@@ -234,3 +234,161 @@ if __name__ == "__main__":
     except nx.NetworkXNoPath:
         print("Hata: Bu iki düğüm arasında yol bulunamadı!")
         # Deneme 2
+
+# ============================================================
+#   GENETIC ALGORITHM OPERATÖRLERİ
+# ============================================================
+
+
+# RANDOM PATH (hızlı yol oluşturucu)
+def random_valid_path(graph, S, D, max_len=80):
+    path = [S]
+    visited = {S}
+    current = S
+
+    for _ in range(max_len):
+        if current == D:
+            return path
+
+        neighbors = list(graph.neighbors(current))
+        if not neighbors:
+            return None
+
+        nxt = random.choice(neighbors)
+        if nxt in visited:
+            continue
+
+        visited.add(nxt)
+        path.append(nxt)
+        current = nxt
+
+    return None
+
+
+# ============================================================
+# PATH REPAIR (geçersiz yolları düzeltir)
+# ============================================================
+
+def repair_path(graph, path, S, D):
+    if path[0] != S:
+        path = [S] + path
+    if path[-1] != D:
+        path = path + [D]
+
+    repaired = [path[0]]
+
+    for i in range(len(path) - 1):
+        u = repaired[-1]
+        v = path[i + 1]
+
+        if v in graph.neighbors(u):
+            repaired.append(v)
+        else:
+            try:
+                fix = nx.shortest_path(graph, u, v)
+                repaired.extend(fix[1:])
+            except:
+                alt = random_valid_path(graph, u, D)
+                repaired.extend(alt[1:])
+                return repaired
+
+    return repaired
+
+
+# ============================================================
+# GA OPERATORS
+# ============================================================
+
+def tournament_selection(pop, fitness, k=5):
+    group = random.sample(pop, k)
+    return min(group, key=lambda p: fitness[tuple(p)])
+
+
+def crossover(p1, p2):
+    if len(p1) < 3 or len(p2) < 3:
+        return p1[:], p2[:]
+
+    c1 = random.randint(1, len(p1) - 2)
+    c2 = random.randint(1, len(p2) - 2)
+
+    child1 = p1[:c1] + p2[c2:]
+    child2 = p2[:c2] + p1[c1:]
+
+    return child1, child2
+
+
+def mutate(path, rate=0.10):
+    if random.random() < rate and len(path) > 3:
+        i, j = random.sample(range(1, len(path) - 1), 2)
+        path[i], path[j] = path[j], path[i]
+    return path
+
+
+# ============================================================
+# FINAL GENETIC ALGORITHM (KISA SÜRÜM)
+# ============================================================
+
+def genetic_algorithm(ortam, S, D, pop_size=40, generations=120):
+    graph = ortam.graf
+    population = []
+
+    # Başlangıç popülasyonu
+    while len(population) < pop_size:
+        p = random_valid_path(graph, S, D)
+        if p:
+            population.append(p)
+
+    # Başlangıç fitness
+    fitness = {
+        tuple(p): ortam.yol_maliyeti_hesapla(p)[0]
+        for p in population
+    }
+
+    best_path = None
+    best_cost = float("inf")
+
+    # Evrim döngüsü
+    for gen in range(generations):
+
+        new_pop = []
+
+        # Elitism
+        elite_n = max(1, pop_size // 10)
+        elites = sorted(population, key=lambda p: fitness[tuple(p)])[:elite_n]
+        new_pop.extend(elites)
+
+        # Yeni nesil üret
+        while len(new_pop) < pop_size:
+
+            p1 = tournament_selection(population, fitness)
+            p2 = tournament_selection(population, fitness)
+
+            c1, c2 = crossover(p1, p2)
+            c1 = mutate(c1)
+            c2 = mutate(c2)
+
+            c1 = repair_path(graph, c1, S, D)
+            c2 = repair_path(graph, c2, S, D)
+
+            new_pop.append(c1)
+            if len(new_pop) < pop_size:
+                new_pop.append(c2)
+
+        population = new_pop
+
+        # Fitness güncelle
+        fitness = {
+            tuple(p): ortam.yol_maliyeti_hesapla(p)[0]
+            for p in population
+        }
+
+        # En iyi birey
+        best_gene = min(fitness, key=fitness.get)
+        cost = fitness[best_gene]
+
+        if cost < best_cost:
+            best_cost = cost
+            best_path = list(best_gene)
+
+    return best_path, best_cost
+
