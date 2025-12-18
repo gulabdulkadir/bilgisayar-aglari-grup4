@@ -3,9 +3,14 @@ import math
 import numpy as np
 import random
 from tqdm import tqdm
-GEREKLI_BANDWIDTH = 100
-KAYNAK = 0
-HEDEF = 114
+import time
+GEREKLI_BANDWIDTH = 500
+KAYNAK = 122
+HEDEF = 240
+W_DELAY = 0.33
+W_RELIABILITY = 0.33
+W_BANDWIDTH = 0.33
+#bunlara dokunma vvv
 MAX_DELAY = 17.0
 MIN_DELAY = 3.5
 MIN_RELIABILITY = 0.002
@@ -33,7 +38,7 @@ def topoloji_filtrele(G, required_bandwidth):
 
     
 class NetworkRoutingEnv():
-    def __init__(self, G, source, target, bandwidth_demand, weights=(0.33, 0.33, 0.33)):
+    def __init__(self, G, source, target, bandwidth_demand, weights=(W_DELAY, W_RELIABILITY, W_BANDWIDTH)):
         self.G = topoloji_filtrele(G, required_bandwidth = GEREKLI_BANDWIDTH)
         self.source = source
         self.bandwidth_demand = bandwidth_demand
@@ -63,7 +68,7 @@ class NetworkRoutingEnv():
         norm_reliability = (total_reliability - MIN_RELIABILITY) / (MAX_RELIABILITY - MIN_RELIABILITY)
         norm_bandwidth = (bw_cost - MIN_BANDWIDTH) / (MAX_BANDWIDTH - MIN_BANDWIDTH)
         
-        reward = (self.weights[0] * norm_delay) + (self.weights[1] * norm_reliability) + (self.weights[2] * norm_bandwidth)
+        reward = (W_DELAY * norm_delay) + (W_RELIABILITY * norm_reliability) + (W_BANDWIDTH * norm_bandwidth)
         
         return -reward
 
@@ -98,13 +103,8 @@ class NetworkRoutingEnv():
             done = True
         
         return self.state, reward, done
-
-
-if __name__ == "__main__":
     
-    ag_topolojisi = network_model.AgOrtami() #ag topolojisini kur
-    ag_topolojisi.verileri_yukle_ve_agi_kur() #exceldeki verileri yukle
-    env = NetworkRoutingEnv(ag_topolojisi.graf, KAYNAK, HEDEF, GEREKLI_BANDWIDTH) #filtrelenmis environment oluşturduk
+def q_learning_egit(env, episode, epsilon, epsilon_min, epsilon_decay, alpha, gamma, max_steps):
     
     env.reset() #ajanımızı kaynak konumuna gönderdik (resetledik)
     
@@ -113,17 +113,14 @@ if __name__ == "__main__":
     
     q_table = np.full((state_space, action_space), -1000.0) #-1000 er puanla her hamleye kötümser başlangıç
     
-    alpha = 0.9 # öğrenme oranı (learning rate)
-    gamma = 0.9 # discount rate
-    max_steps = 250 #sonsuz döngü olmamamsı için maximum adım sayisi belirledik
+
     
-    epsilon = 0.9  #keşif için sınırlama değişkenleri 0.9 öğrenme ile başlıyor
-    epsilon_min = 0.1 #her seferinde 0.998 ile çarpıyor 0.1 olunca daha fazla azaltmıyor
-    epsilon_decay = 0.998 
+    
+    
     
     print(">> Eğitim Başlıyor...")
-    
-    for i in tqdm(range(1, 500)):
+    t1 = time.time()
+    for i in tqdm(range(0, episode)):
         
         state = env.reset()
         done = False
@@ -152,7 +149,7 @@ if __name__ == "__main__":
                     
                        
             next_state, reward, done = env.step(action)
-#####    
+   
            # --- 3. GELECEĞİ HESAPLA (DÜZELTME 2: FUTURE MASKING GERİ GELDİ) ---
             # np.max yerine sadece gelecekteki komşulara bakıyoruz
             next_neighbors = list(env.G.neighbors(next_state))
@@ -175,9 +172,13 @@ if __name__ == "__main__":
             
         if epsilon > epsilon_min:
             epsilon *= epsilon_decay
-    
+    t2 = time.time()
+    print (f"\nEğitim Süresi: {t2 - t1}")
     print("Training finished")
- 
+    
+    return q_table  
+
+def q_learning_calistir(q_table, max_steps):
     print(">> 2. En İyi Rota Hesaplanıyor...")
     curr = env.reset()
     path = [curr] # Rotayı tutacak liste
@@ -208,8 +209,31 @@ if __name__ == "__main__":
                 break
     else:
             print("❌ Hedefe ulaşılamadı.")
-            
-            
+    return path
+
+if __name__ == "__main__":
+    #parametreler
+    epsilon = 0.999  #keşif için sınırlama değişkenleri 0.999 öğrenme ile başlıyor
+    epsilon_min = 0.1 #her seferinde 0.998 ile çarpıyor 0.1 olunca daha fazla azaltmıyor
+    epsilon_decay = 0.998
+    max_steps = 250 #sonsuz döngü olmamamsı için maximum adım sayisi belirledik
+    episode = 5000
+    alpha = 0.5 # öğrenme oranı (learning rate)
+    gamma = 0.9 # discount rate
+    
+    
+    #topoloji olustur filtrele
+    ag_topolojisi = network_model.AgOrtami() #ag topolojisini kur
+    ag_topolojisi.verileri_yukle_ve_agi_kur() #exceldeki verileri yukle
+    env = NetworkRoutingEnv(ag_topolojisi.graf, KAYNAK, HEDEF, GEREKLI_BANDWIDTH) #filtrelenmis environment oluşturduk
+    
+    #q_learning_egit
+    q_table = q_learning_egit(env = env, episode = episode, epsilon = epsilon,
+                              epsilon_min = epsilon_min, epsilon_decay = epsilon_decay,
+                              alpha = alpha, gamma = gamma, max_steps = max_steps)
+
+    #q_learning_calistir          
+    path = q_learning_calistir(q_table, max_steps)       
     print (f"Yol Maliyeti: {ag_topolojisi.yol_maliyeti_hesapla(path, GEREKLI_BANDWIDTH)}")
     
     
