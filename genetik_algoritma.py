@@ -63,7 +63,7 @@ def tournament_selection(population, fitness, k=5):
 
 
  
-# ELITISM (AYRI METOT)
+# ELITISM 
 def elitism(population, fitness, rate=0.1):
     elite_n = max(1, int(len(population) * rate))
     sorted_pop = sorted(population, key=lambda p: fitness[tuple(p)])
