@@ -4,9 +4,11 @@ import numpy as np
 import random
 from tqdm import tqdm
 import time
-GEREKLI_BANDWIDTH = 500
-KAYNAK = 122
-HEDEF = 240
+import genetik_algoritma
+
+GEREKLI_BANDWIDTH = 50
+KAYNAK = 100
+HEDEF = 245
 W_DELAY = 0.33
 W_RELIABILITY = 0.33
 W_BANDWIDTH = 0.33
@@ -60,16 +62,20 @@ class NetworkRoutingEnv():
 
     def calculate_reward(self, action ):
         
-        total_delay = (self.G.nodes[action]['islem_suresi'] + self.G.edges[self.state, action]['gecikme'])
+        if action == HEDEF :
+            total_delay = self.G.edges[self.state, action]['gecikme']
+        else:
+            total_delay = (self.G.nodes[action]['islem_suresi'] + self.G.edges[self.state, action]['gecikme'])
+        
         total_reliability = -math.log(self.G.edges[self.state, action]['guvenilirlik']) + (-math.log(self.G.nodes[action]['guvenilirlik']))
         bw_cost = 1000/(self.G.edges[self.state, action]['bant_genisligi'] + 1e-5)
+        #normalize etmiyoruz çünkü cost hesaplama fonksiyonu da etmeden cost hesaplıyor
+        #norm_delay = (total_delay - MIN_DELAY) / (MAX_DELAY - MIN_DELAY)
+        #norm_reliability = (total_reliability - MIN_RELIABILITY) / (MAX_RELIABILITY - MIN_RELIABILITY)
+        #norm_bandwidth = (bw_cost - MIN_BANDWIDTH) / (MAX_BANDWIDTH - MIN_BANDWIDTH)
+        #reward = (W_DELAY * norm_delay) + (W_RELIABILITY * norm_reliability) + (W_BANDWIDTH * norm_bandwidth)
         
-        norm_delay = (total_delay - MIN_DELAY) / (MAX_DELAY - MIN_DELAY)
-        norm_reliability = (total_reliability - MIN_RELIABILITY) / (MAX_RELIABILITY - MIN_RELIABILITY)
-        norm_bandwidth = (bw_cost - MIN_BANDWIDTH) / (MAX_BANDWIDTH - MIN_BANDWIDTH)
-        
-        reward = (W_DELAY * norm_delay) + (W_RELIABILITY * norm_reliability) + (W_BANDWIDTH * norm_bandwidth)
-        
+        reward = total_delay + total_reliability + bw_cost
         return -reward
 
 
@@ -108,8 +114,8 @@ def q_learning_egit(env, episode, epsilon, epsilon_min, epsilon_decay, alpha, ga
     
     env.reset() #ajanımızı kaynak konumuna gönderdik (resetledik)
     
-    action_space = len(ag_topolojisi.graf.nodes) 
-    state_space = len(ag_topolojisi.graf.nodes) #state: şu anki konum, action: hareket edebileceği konum q_table için oluşturduk
+    action_space = len(env.nodes) 
+    state_space = len(env.nodes) #state: şu anki konum, action: hareket edebileceği konum q_table için oluşturduk
     
     q_table = np.full((state_space, action_space), -1000.0) #-1000 er puanla her hamleye kötümser başlangıç
     
@@ -132,6 +138,8 @@ def q_learning_egit(env, episode, epsilon, epsilon_min, epsilon_decay, alpha, ga
             
             if not neighbors:
                 action = state
+            elif random.uniform(0, 1) < 0.75 and HEDEF in neighbors:
+                action = HEDEF
                 
             elif random.uniform(0, 1) < epsilon:
                 action = random.choice(neighbors)
@@ -178,7 +186,7 @@ def q_learning_egit(env, episode, epsilon, epsilon_min, epsilon_decay, alpha, ga
     
     return q_table  
 
-def q_learning_calistir(q_table, max_steps):
+def q_learning_calistir(env, q_table, max_steps):
     print(">> 2. En İyi Rota Hesaplanıyor...")
     curr = env.reset()
     path = [curr] # Rotayı tutacak liste
@@ -213,11 +221,11 @@ def q_learning_calistir(q_table, max_steps):
 
 if __name__ == "__main__":
     #parametreler
-    epsilon = 0.999  #keşif için sınırlama değişkenleri 0.999 öğrenme ile başlıyor
+    epsilon = 20.0  #keşif için sınırlama değişkenleri 0.999 öğrenme ile başlıyor
     epsilon_min = 0.1 #her seferinde 0.998 ile çarpıyor 0.1 olunca daha fazla azaltmıyor
     epsilon_decay = 0.998
-    max_steps = 250 #sonsuz döngü olmamamsı için maximum adım sayisi belirledik
-    episode = 5000
+    max_steps = 50 #sonsuz döngü olmamamsı için maximum adım sayisi belirledik
+    episode = 1500
     alpha = 0.5 # öğrenme oranı (learning rate)
     gamma = 0.9 # discount rate
     
@@ -233,8 +241,10 @@ if __name__ == "__main__":
                               alpha = alpha, gamma = gamma, max_steps = max_steps)
 
     #q_learning_calistir          
-    path = q_learning_calistir(q_table, max_steps)       
+    path = q_learning_calistir(env, q_table, max_steps)
     print (f"Yol Maliyeti: {ag_topolojisi.yol_maliyeti_hesapla(path, GEREKLI_BANDWIDTH)}")
+    genetik_path = genetik_algoritma.genetic_algorithm(ag_topolojisi, KAYNAK, HEDEF, GEREKLI_BANDWIDTH)
+    print(f"deneme yol maliyeti {genetik_path}")
     
     
     
