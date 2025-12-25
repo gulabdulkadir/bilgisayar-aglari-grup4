@@ -75,7 +75,7 @@ class NetworkRoutingEnv():
         #norm_bandwidth = (bw_cost - MIN_BANDWIDTH) / (MAX_BANDWIDTH - MIN_BANDWIDTH)
         #reward = (W_DELAY * norm_delay) + (W_RELIABILITY * norm_reliability) + (W_BANDWIDTH * norm_bandwidth)
         
-        reward = total_delay + total_reliability + bw_cost
+        reward = W_DELAY * total_delay + W_RELIABILITY * total_reliability + W_BANDWIDTH * bw_cost 
         return -reward
 
 
@@ -225,8 +225,8 @@ if __name__ == "__main__":
     epsilon_min = 0.1 #her seferinde 0.998 ile çarpıyor 0.1 olunca daha fazla azaltmıyor
     epsilon_decay = 0.998
     max_steps = 50 #sonsuz döngü olmamamsı için maximum adım sayisi belirledik
-    episode = 1500
-    alpha = 0.5 # öğrenme oranı (learning rate)
+    episode = 500
+    alpha = 0.9 # öğrenme oranı (learning rate)
     gamma = 0.9 # discount rate
     
     
