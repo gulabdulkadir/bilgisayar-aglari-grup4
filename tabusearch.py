@@ -1,77 +1,131 @@
-import pandas as pd
+# ============================================================
+# TABU SEARCH ALGORİTMASI
+# network_model.py ÜZERİNDEN ÇALIŞIR
+# BAŞLANGIÇ YOLU: nx.shortest_path (DÜZELTİLDİ)
+# ============================================================
+
+import random
 import networkx as nx
-import math
+from network_model import AgOrtami
 
-# --- SABİTLER ---
-MAKS_BANT_GENISLIGI = 1000.0 # 1000 Mbps = 1 Gbps (Dokümandaki formül için)
 
-def agi_baslat():
-    """CSV dosyalarını okur ve ağ yapısını oluşturur."""
+def komsu_yollar_uret(graf, mevcut_yol):
+    """
+    Mevcut yolun içinden bir düğümü değiştirerek komşu çözümler üretir.
+    """
+    komsular = []
+
+    if len(mevcut_yol) < 3:
+        return komsular
+
+    for i in range(1, len(mevcut_yol) - 1):
+        onceki = mevcut_yol[i - 1]
+        sonraki = mevcut_yol[i + 1]
+
+        alternatifler = set(graf.neighbors(onceki)).intersection(
+            graf.neighbors(sonraki)
+        )
+
+        for dugum in alternatifler:
+            if dugum not in mevcut_yol:
+                yeni_yol = mevcut_yol[:i] + [dugum] + mevcut_yol[i + 1:]
+                komsular.append(yeni_yol)
+
+    return komsular
+
+
+def tabu_search(ag, kaynak, hedef, istenen_bw,
+                iterasyon_sayisi=100, tabu_listesi_boyutu=20):
+    """
+    Tabu Search algoritması ana fonksiyonu
+    """
+
+    graf = ag.graf
+
+    # ========================================================
+    # BAŞLANGIÇ ÇÖZÜMÜ (DÜZELTİLDİ)
+    # ========================================================
     try:
-        # CSV dosyalarınızı okuyoruz (Noktalı virgül ';' ayracını kullanıyoruz)
-        dugum_verisi = pd.read_csv("BSM307_317_Guz2025_TermProject_NodeData.csv", sep=';')
-        baglanti_verisi = pd.read_csv("BSM307_317_Guz2025_TermProject_EdgeData.csv", sep=';')
-    except Exception as e:
-        print(f"HATA: Dosyalar okunamadı! Lütfen dosya isimlerini kontrol edin: {e}")
-        return None
+        mevcut_yol = nx.shortest_path(graf, kaynak, hedef)
+    except nx.NetworkXNoPath:
+        print("❌ Başlangıç yolu bulunamadı.")
+        return None, float('inf')
 
-    G = nx.Graph()
+    # Başlangıç maliyeti
+    en_iyi_skor, _, _, _ = ag.yol_maliyeti_hesapla(
+        mevcut_yol, istenen_bw
+    )
 
-    # Düğümleri (Node) ekliyoruz (Gecikme ve Güvenilirlik özellikleriyle)
-    for _, satir in dugum_verisi.iterrows():
-        G.add_node(int(satir['Node_ID']), 
-                   islem_gecikmesi=satir['ProcessingDelay'],
-                   guvenilirlik=satir['NodeReliability'])
+    en_iyi_yol = mevcut_yol
+    tabu_listesi = []
 
-    # Bağlantıları (Edge) ekliyoruz (Gecikme, Bant Genişliği ve Güvenilirlik ile)
-    for _, satir in baglanti_verisi.iterrows():
-        u, v = int(satir['Source']), int(satir['Target'])
-        # Mbps değerini Gbps'e çeviriyoruz
-        bant_gbps = satir['Bandwidth'] / 1000.0
-        
-        G.add_edge(u, v, 
-                   baglanti_gecikmesi=satir['LinkDelay'],
-                   bant_genisligi=satir['Bandwidth'],
-                   bant_gbps=bant_gbps,
-                   guvenilirlik=satir['LinkReliability'])
-    
-    print(f"Ağ başarıyla kuruldu: {G.number_of_nodes()} düğüm ve {G.number_of_edges()} bağlantı yüklendi.")
-    return G
+    # ========================================================
+    # ANA DÖNGÜ
+    # ========================================================
+    for iterasyon in range(iterasyon_sayisi):
 
-def metrikleri_hesapla(graf, yol):
-    """Bir yolun (Path) tüm QoS metriklerini dokümandaki formüllere göre hesaplar."""
-    toplam_gecikme = 0.0
-    guvenilirlik_maliyeti = 0.0
-    kaynak_maliyeti = 0.0
+        komsu_yollar = komsu_yollar_uret(graf, mevcut_yol)
+        en_iyi_komsu = None
+        en_iyi_komsu_skor = float('inf')
 
-    # 1. Düğüm temelli metrikler (Logaritmik güvenilirlik ve işlem gecikmesi)
-    for dugum in yol:
-        ozellik = graf.nodes[dugum]
-        # Güvenilirlik Maliyeti Formülü: -log(Reliability)
-        guvenilirlik_maliyeti += -math.log(ozellik['guvenilirlik'])
-        # Kaynak ve hedef hariç, ara düğümlerin işlem gecikmesini ekle
-        if dugum != yol[0] and dugum != yol[-1]:
-            toplam_gecikme += ozellik['islem_gecikmesi']
+        for yol in komsu_yollar:
+            if yol in tabu_listesi:
+                continue
 
-    # 2. Bağlantı temelli metrikler (Gecikme, Güvenilirlik ve Kaynak Kullanımı)
-    for i, j in zip(yol[:-1], yol[1:]):
-        kenar = graf.get_edge_data(i, j)
-        toplam_gecikme += kenar['baglanti_gecikmesi']
-        guvenilirlik_maliyeti += -math.log(kenar['guvenilirlik'])
-        # Kaynak Maliyeti Formülü: 1 Gbps / Bant Genişliği (Gbps)
-        kaynak_maliyeti += (1.0 / kenar['bant_gbps'])
+            skor, _, _, _ = ag.yol_maliyeti_hesapla(yol, istenen_bw)
 
-    return {
-        'gecikme': toplam_gecikme,
-        'guvenilirlik_maliyeti': guvenilirlik_maliyeti,
-        'kaynak_maliyeti': kaynak_maliyeti
-    }
+            if skor < en_iyi_komsu_skor:
+                en_iyi_komsu = yol
+                en_iyi_komsu_skor = skor
 
-def toplam_maliyeti_getir(graf, yol, w_gecikme, w_guvenilirlik, w_kaynak):
-    """Ağırlıklı Toplam Yöntemi ile yolun toplam maliyet puanını hesaplar."""
-    m = metrikleri_hesapla(graf, yol)
-    # Fitness (Uygunluk) veya Cost (Maliyet) fonksiyonu
-    skor = (w_gecikme * m['gecikme'] + 
-            w_guvenilirlik * m['guvenilirlik_maliyeti'] + 
-            w_kaynak * m['kaynak_maliyeti'])
-    return skor
+        if en_iyi_komsu is None:
+            break
+
+        mevcut_yol = en_iyi_komsu
+
+        # TABU LİSTESİNİ GÜNCELLE
+        tabu_listesi.append(mevcut_yol)
+        if len(tabu_listesi) > tabu_listesi_boyutu:
+            tabu_listesi.pop(0)
+
+        # GLOBAL EN İYİYİ GÜNCELLE
+        if en_iyi_komsu_skor < en_iyi_skor:
+            en_iyi_yol = en_iyi_komsu
+            en_iyi_skor = en_iyi_komsu_skor
+
+        print(f"Iterasyon {iterasyon + 1} | En iyi skor: {en_iyi_skor:.4f}")
+
+    return en_iyi_yol, en_iyi_skor
+
+
+# ============================================================
+# MAIN
+# ============================================================
+if __name__ == "__main__":
+    print("\n--- TABU SEARCH BAŞLATILIYOR ---")
+
+    # AĞI OLUŞTUR
+    ag_ortami = AgOrtami()
+    ag_ortami.verileri_yukle_ve_agi_kur()
+
+    # TALEPLERİ AL
+    talepler = ag_ortami.talep_listesini_getir()
+    talep = talepler[0]
+
+    kaynak = talep['kaynak']
+    hedef = talep['hedef']
+    istenen_bw = talep['miktar']
+
+    print(f"Kaynak: {kaynak}, Hedef: {hedef}, BW: {istenen_bw}")
+
+    # TABU SEARCH ÇALIŞTIR
+    en_iyi_yol, en_iyi_skor = tabu_search(
+        ag_ortami,
+        kaynak,
+        hedef,
+        istenen_bw
+    )
+
+    print("\n--- SONUÇ ---")
+    print(f"En iyi yol: {en_iyi_yol}")
+    print(f"Toplam Fitness (Maliyet): {en_iyi_skor:.4f}")
