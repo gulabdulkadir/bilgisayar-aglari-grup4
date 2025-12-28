@@ -48,14 +48,13 @@ if __name__ == "__main__":
 
 #Main
 
+ if __name__ == "__main__":
 
-if __name__ == "__main__":
 
-    # 1) Ortam oluştur
     ortam = AgOrtami()
     ortam.verileri_yukle_ve_agi_kur()
 
-    # 2) Örnek talep
+
     talepler = ortam.talep_listesini_getir()
     talep = talepler[0]
 
@@ -63,36 +62,30 @@ if __name__ == "__main__":
     D = talep["hedef"]
     bw = talep["miktar"]
 
-    # 3) GA çalıştır
+
     best_path, best_cost = genetic_algorithm(
         ortam=ortam,
         S=S,
         D=D,
         bw=bw,
-        pop_size=10,
+        pop_size=50,
         generations=100
     )
 
-    # 4) SADECE SONUÇ YAZDIR
-    print("\n=================== SONUÇ ===================")
 
     if best_path:
-        print("✔ Genetik algoritma başarıyla tamamlandı.")
-        print(f"✔ En iyi yol bulundu ({len(best_path)} düğüm):")
+        print("Genetik algoritma başarıyla tamamlandı.")
+        print(f"En iyi yol bulundu ({len(best_path)} düğüm):")
         print(f"  {best_path}")
-        print(f"✔ Toplam Fitness (Maliyet): {best_cost:.4f}")
+        print(f"Toplam Fitness : {best_cost:.4f}")
 
         _, delay, reliability, resource_cost = ortam.yol_maliyeti_hesapla(
             best_path, istenen_bw=bw
         )
-
-        print("\n--- Yolun Detaylı Metrikleri ---")
-        print(f"⏱ Gecikme        : {delay:.2f} ms")
-        print(f"🛡 Güvenilirlik  : {reliability:.4f}")
-        print(f"💰 Kaynak Maliyeti: {resource_cost:.2f}")
+        print(f"Gecikme        : {delay:.2f} ms")
+        print(f"Güvenilirlik  : {reliability:.4f}")
+        print(f"Kaynak Maliyeti: {resource_cost:.2f}")
     else:
-        print("✖ Uygun bir yol bulunamadı.")
-
-    print("============================================")
+        print("Uygun bir yol bulunamadı.")
     
 
