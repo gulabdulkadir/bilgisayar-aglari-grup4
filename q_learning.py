@@ -39,7 +39,7 @@ def topoloji_filtrele(G, required_bandwidth):
     
 class NetworkRoutingEnv():
     def __init__(self, G, source, target, bandwidth_demand, weights=(W_DELAY, W_RELIABILITY, W_BANDWIDTH)):
-        self.G = topoloji_filtrele(G, required_bandwidth = GEREKLI_BANDWIDTH)
+        self.G = topoloji_filtrele(G, required_bandwidth = bandwidth_demand)
         self.source = source
         self.bandwidth_demand = bandwidth_demand
         self.weights = weights # (W_delay, W_reliability, W_resource)
@@ -58,7 +58,7 @@ class NetworkRoutingEnv():
         return self.state
     
 
-    def calculate_reward(self, action ):
+    def calculate_reward(self, action, HEDEF, KAYNAK ):
         
         if action == HEDEF :
             total_delay = self.G.edges[self.state, action]['gecikme']
@@ -78,7 +78,7 @@ class NetworkRoutingEnv():
         return -reward
 
 
-    def step(self, action):
+    def step(self, action, HEDEF, KAYNAK):
         """
         Ajanın bir düğümden diğerine geçme hamlesi.
         action: Gitmek istenilen düğüm ID'si.
@@ -96,7 +96,7 @@ class NetworkRoutingEnv():
         if next_node in self.visited:
             return current_node, -10000.0, True
         
-        reward = self.calculate_reward(action)
+        reward = self.calculate_reward(action, HEDEF, KAYNAK)
         
         self.state = next_node
         self.path_history.append(self.state)
@@ -109,7 +109,7 @@ class NetworkRoutingEnv():
         
         return self.state, reward, done
     
-def q_learning_egit(env, episode, epsilon, epsilon_min, epsilon_decay, alpha, gamma, max_steps):
+def q_learning_egit(HEDEF, KAYNAK, env, episode, epsilon, epsilon_min, epsilon_decay, alpha, gamma, max_steps):
     
     env.reset() #ajanımızı kaynak konumuna gönderdik (resetledik)
     
@@ -119,7 +119,7 @@ def q_learning_egit(env, episode, epsilon, epsilon_min, epsilon_decay, alpha, ga
     q_table = np.full((state_space, action_space), -1000.0) #-1000 er puanla her hamleye kötümser başlangıç
     
 
-    print(">> Eğitim Başlıyor...")
+    print(">> Q Learning Eğitim Başlıyor...")
     t1 = time.time()
     for i in tqdm(range(0, episode)):
         
@@ -150,7 +150,7 @@ def q_learning_egit(env, episode, epsilon, epsilon_min, epsilon_decay, alpha, ga
                     action = neighbors[best_index_local] #hareketi en iyi komşuya gönder
                     
                        
-            next_state, reward, done = env.step(action)
+            next_state, reward, done = env.step(action, HEDEF, KAYNAK)
    
            # --- 3. GELECEĞİ HESAPLA  ---
             # sadece gelecekteki komşulara bakıyoruz
@@ -175,15 +175,15 @@ def q_learning_egit(env, episode, epsilon, epsilon_min, epsilon_decay, alpha, ga
         if epsilon > epsilon_min:
             epsilon *= epsilon_decay
     t2 = time.time()
-    print (f"\nEğitim Süresi: {t2 - t1}")
-    print("Training finished")
+    print (f"\nQ Learning Eğitim Süresi: {t2 - t1}")
+    print("Q Learning Training finished")
     
     return q_table  
 
 
 
-def q_learning_calistir(env, q_table, max_steps):
-    print(">> 2. En İyi Rota Hesaplanıyor...")
+def q_learning_calistir(HEDEF, KAYNAK, env, q_table, max_steps):
+    print(">> Q Learning En İyi Rota Hesaplanıyor...")
     curr = env.reset()
     path = [curr] # Rotayı tutacak liste
     
@@ -200,14 +200,14 @@ def q_learning_calistir(env, q_table, max_steps):
             best_idx = np.argmax(neighbor_q_values)
             action = neighbors[best_idx]
         
-            next_node, r, d = env.step(action)
+            next_node, r, d = env.step(action, HEDEF, KAYNAK)
             path.append(next_node)
             curr = next_node
         
             if d: 
                 if curr == HEDEF:
                     
-                    print(f"🏆 HEDEF BULUNDU! Rota: {path}")                    
+                    print(f"Q Learning🏆 HEDEF BULUNDU! Rota: {path}")                    
                 else:
                     print("❌ BAŞARISIZ! Ajan bir döngüye girdi ve tur sonlandırıldı.")
                 break
@@ -237,12 +237,12 @@ if __name__ == "__main__":
         env = NetworkRoutingEnv(ag_topolojisi.graf, KAYNAK, HEDEF, GEREKLI_BANDWIDTH) #filtrelenmis environment oluşturduk
     
         #q_learning_egit
-        q_table = q_learning_egit(env = env, episode = episode, epsilon = epsilon,
+        q_table = q_learning_egit(HEDEF, KAYNAK, env = env, episode = episode, epsilon = epsilon,
                               epsilon_min = epsilon_min, epsilon_decay = epsilon_decay,
                               alpha = alpha, gamma = gamma, max_steps = max_steps)
 
         #q_learning_calistir          
-        path = q_learning_calistir(env, q_table, max_steps)
+        path = q_learning_calistir(HEDEF, KAYNAK, env, q_table, max_steps)
         print (f"Yol Maliyeti: {ag_topolojisi.yol_maliyeti_hesapla(path, GEREKLI_BANDWIDTH)}")
         genetik_path = genetik_algoritma.genetic_algorithm(ag_topolojisi, KAYNAK, HEDEF, GEREKLI_BANDWIDTH)
         print(f"deneme yol maliyeti {genetik_path}")
