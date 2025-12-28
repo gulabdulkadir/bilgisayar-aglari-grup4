@@ -6,9 +6,7 @@ from tqdm import tqdm
 import time
 import genetik_algoritma
 
-GEREKLI_BANDWIDTH = 50
-KAYNAK = 100
-HEDEF = 245
+
 W_DELAY = 0.33
 W_RELIABILITY = 0.33
 W_BANDWIDTH = 0.33
@@ -69,6 +67,7 @@ class NetworkRoutingEnv():
         
         total_reliability = -math.log(self.G.edges[self.state, action]['guvenilirlik']) + (-math.log(self.G.nodes[action]['guvenilirlik']))
         bw_cost = 1000/(self.G.edges[self.state, action]['bant_genisligi'] + 1e-5)
+        #yorum satırı olan kodlar normalize etmek için eklenmişti fakat artık kullanılmıyor
         #normalize etmiyoruz çünkü cost hesaplama fonksiyonu da etmeden cost hesaplıyor
         #norm_delay = (total_delay - MIN_DELAY) / (MAX_DELAY - MIN_DELAY)
         #norm_reliability = (total_reliability - MIN_RELIABILITY) / (MAX_RELIABILITY - MIN_RELIABILITY)
@@ -120,10 +119,6 @@ def q_learning_egit(env, episode, epsilon, epsilon_min, epsilon_decay, alpha, ga
     q_table = np.full((state_space, action_space), -1000.0) #-1000 er puanla her hamleye kötümser başlangıç
     
 
-    
-    
-    
-    
     print(">> Eğitim Başlıyor...")
     t1 = time.time()
     for i in tqdm(range(0, episode)):
@@ -131,17 +126,16 @@ def q_learning_egit(env, episode, epsilon, epsilon_min, epsilon_decay, alpha, ga
         state = env.reset()
         done = False
         steps = 0
-        episode_reward = 0 # Bu turdaki toplam puanı tutar
         
         while not done and steps < max_steps:
-            neighbors = list(env.G.neighbors(state))
+            neighbors = list(env.G.neighbors(state)) #saece komşular üzerinden arama yapmak için komşuluk listesi
             
             if not neighbors:
                 action = state
-            elif random.uniform(0, 1) < 0.75 and HEDEF in neighbors:
+            elif random.uniform(0, 1) < 0.75 and HEDEF in neighbors: #hedef komşulukta varsa %75 açgözlü davran
                 action = HEDEF
                 
-            elif random.uniform(0, 1) < epsilon:
+            elif random.uniform(0, 1) < epsilon: #rand epsilondan küçükse rastgele komşu seç
                 action = random.choice(neighbors)
                 
             else:   
@@ -151,27 +145,27 @@ def q_learning_egit(env, episode, epsilon, epsilon_min, epsilon_decay, alpha, ga
                 else:
                     neighbor_q_values = [q_table[state, n] for n in neighbors]
                     
-                    best_index_local = np.argmax(neighbor_q_values)
+                    best_index_local = np.argmax(neighbor_q_values) #en iyi komşunun indexini al
                     
-                    action = neighbors[best_index_local]
+                    action = neighbors[best_index_local] #hareketi en iyi komşuya gönder
                     
                        
             next_state, reward, done = env.step(action)
    
-           # --- 3. GELECEĞİ HESAPLA (DÜZELTME 2: FUTURE MASKING GERİ GELDİ) ---
-            # np.max yerine sadece gelecekteki komşulara bakıyoruz
+           # --- 3. GELECEĞİ HESAPLA  ---
+            # sadece gelecekteki komşulara bakıyoruz
             next_neighbors = list(env.G.neighbors(next_state))
             
             if not next_neighbors:
-                max_future_q = -1000.0 # Veya tablonun taban puanı
+                max_future_q = -1000.0 # tablonun taban puanı
             else:
                 # Gelecekteki düğümün sadece gerçek komşularının puanlarını al
                 future_qs = [q_table[next_state, n] for n in next_neighbors]
-                max_future_q = max(future_qs)
+                max_future_q = max(future_qs) #en yüksek komşunun q değerini al
             
             # --- 4. GÜNCELLEME ---
             current_q = q_table[state, action]
-            # Formülde np.max yerine max_future_q kullanıyoruz
+            #  max_future_q kullanıyoruz
             new_q = current_q + alpha * (reward + gamma * max_future_q - current_q)
             q_table[state, action] = new_q
             
@@ -185,6 +179,8 @@ def q_learning_egit(env, episode, epsilon, epsilon_min, epsilon_decay, alpha, ga
     print("Training finished")
     
     return q_table  
+
+
 
 def q_learning_calistir(env, q_table, max_steps):
     print(">> 2. En İyi Rota Hesaplanıyor...")
@@ -229,22 +225,28 @@ if __name__ == "__main__":
     alpha = 0.9 # öğrenme oranı (learning rate)
     gamma = 0.9 # discount rate
     
+    talepler = network_model.AgOrtami().talep_listesini_getir()
+    for i in range (len(talepler)):
+        deneme_talep = talepler[i]
+        KAYNAK = deneme_talep['kaynak']
+        HEDEF = deneme_talep['hedef']
+        GEREKLI_BANDWIDTH = deneme_talep['miktar']
+        #topoloji olustur filtrele
+        ag_topolojisi = network_model.AgOrtami() #ag topolojisini kur
+        ag_topolojisi.verileri_yukle_ve_agi_kur() #exceldeki verileri yukle
+        env = NetworkRoutingEnv(ag_topolojisi.graf, KAYNAK, HEDEF, GEREKLI_BANDWIDTH) #filtrelenmis environment oluşturduk
     
-    #topoloji olustur filtrele
-    ag_topolojisi = network_model.AgOrtami() #ag topolojisini kur
-    ag_topolojisi.verileri_yukle_ve_agi_kur() #exceldeki verileri yukle
-    env = NetworkRoutingEnv(ag_topolojisi.graf, KAYNAK, HEDEF, GEREKLI_BANDWIDTH) #filtrelenmis environment oluşturduk
-    
-    #q_learning_egit
-    q_table = q_learning_egit(env = env, episode = episode, epsilon = epsilon,
+        #q_learning_egit
+        q_table = q_learning_egit(env = env, episode = episode, epsilon = epsilon,
                               epsilon_min = epsilon_min, epsilon_decay = epsilon_decay,
                               alpha = alpha, gamma = gamma, max_steps = max_steps)
 
-    #q_learning_calistir          
-    path = q_learning_calistir(env, q_table, max_steps)
-    print (f"Yol Maliyeti: {ag_topolojisi.yol_maliyeti_hesapla(path, GEREKLI_BANDWIDTH)}")
-    genetik_path = genetik_algoritma.genetic_algorithm(ag_topolojisi, KAYNAK, HEDEF, GEREKLI_BANDWIDTH)
-    print(f"deneme yol maliyeti {genetik_path}")
+        #q_learning_calistir          
+        path = q_learning_calistir(env, q_table, max_steps)
+        print (f"Yol Maliyeti: {ag_topolojisi.yol_maliyeti_hesapla(path, GEREKLI_BANDWIDTH)}")
+        genetik_path = genetik_algoritma.genetic_algorithm(ag_topolojisi, KAYNAK, HEDEF, GEREKLI_BANDWIDTH)
+        print(f"deneme yol maliyeti {genetik_path}")
+    
     
     
     
