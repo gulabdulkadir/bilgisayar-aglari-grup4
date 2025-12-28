@@ -1,6 +1,6 @@
 # Q LEARNING PARAMETRELERI
 from genetik_algoritma import genetic_algorithm
-
+import tabusearch
 EPSILON = 20.0
 EPSILON_MIN = 0.1
 EPSILON_DECAY = 0.998
@@ -79,3 +79,26 @@ if __name__ == "__main__":
         print(f"Kaynak Maliyeti: {resource_cost:.2f}")
     else:
         print("Uygun bir yol bulunamadı.")
+# --- TABU SEARCH BÖLÜMÜ ---
+print("\n" + "="*20)
+print("TABU SEARCH SONUÇLARI")
+print("="*20)
+
+# Algoritmayı çalıştır
+tabu_path = tabusearch.tabu_search(ag_topolojisi, KAYNAK, HEDEF, GEREKLI_BANDWIDTH)
+
+if tabu_path:
+    # Senin network_model.py içindeki hesaplamayı kullanıyoruz
+    t_skor, t_gec, t_guv_mal, t_kaynak = ag_topolojisi.yol_maliyeti_hesapla(tabu_path, GEREKLI_BANDWIDTH)
+    
+    import math
+    guvenilirlik_yuzde = math.exp(-t_guv_mal) * 100 # Güvenilirliği yüzdeye çevir
+
+    print(f"Rota: {tabu_path}")
+    print(f"Toplam Skor (Fitness): {t_skor:.4f}")
+    print(f"Gecikme: {t_gec:.2f} ms")
+    print(f"Güvenilirlik: %{guvenilirlik_yuzde:.4f}")
+    print(f"Kaynak Maliyeti: {t_kaynak:.2f}")
+else:
+    print("HATA: Tabu Search bir yol bulamadı!")
+print("="*20)
