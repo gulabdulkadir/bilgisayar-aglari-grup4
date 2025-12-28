@@ -2,8 +2,8 @@ import random
 import networkx as nx
 from network_model import AgOrtami
 
- 
-# RANDOM PATH (Başlangıç popülasyonu)
+# RANDOM PATH Başlangıç popülasyonu
+
 def random_valid_path(graph, S, D, max_len=80):
     path = [S]
     visited = {S}
@@ -25,8 +25,10 @@ def random_valid_path(graph, S, D, max_len=80):
 
     return None
 
- 
+
+
 # PATH REPAIR
+
 def repair_path(graph, path, S, D):
     if not path:
         return None
@@ -54,24 +56,27 @@ def repair_path(graph, path, S, D):
     return repaired
 
 
- 
+
 # SELECTION – TOURNAMENT
+
 def tournament_selection(population, fitness, k=5):
     k = min(k, len(population))
     group = random.sample(population, k)
     return min(group, key=lambda p: fitness[tuple(p)])
 
 
- 
-# ELITISM 
+
+# ELITISM
+
 def elitism(population, fitness, rate=0.1):
     elite_n = max(1, int(len(population) * rate))
     sorted_pop = sorted(population, key=lambda p: fitness[tuple(p)])
     return [p.copy() for p in sorted_pop[:elite_n]]
 
 
- 
+
 # CROSSOVER
+
 def crossover(p1, p2):
     if len(p1) < 3 or len(p2) < 3:
         return p1[:], p2[:]
@@ -82,21 +87,23 @@ def crossover(p1, p2):
     return p1[:c1] + p2[c2:], p2[:c2] + p1[c1:]
 
 
- 
+
 # MUTATION
+
 def mutate(path, rate=0.1):
     if random.random() < rate and len(path) > 3:
         i, j = random.sample(range(1, len(path) - 1), 2)
         path[i], path[j] = path[j], path[i]
     return path
 
- 
+
 # GENETIC ALGORITHM (ANA)
+
 def genetic_algorithm(ortam, S, D, bw, pop_size=50, generations=100):
     graph = ortam.graf
     population = []
 
-    # Başlangıç Popülasyonu
+    #Başlangıç Popülasyonu
     attempts = 0
     while len(population) < pop_size and attempts < pop_size * 10:
         p = random_valid_path(graph, S, D)
@@ -107,7 +114,7 @@ def genetic_algorithm(ortam, S, D, bw, pop_size=50, generations=100):
     if not population:
         return None, float('inf')
 
-    #  Fitness
+    #Fitness
     fitness = {
         tuple(p): ortam.yol_maliyeti_hesapla(p, istenen_bw=bw)[0]
         for p in population
@@ -116,7 +123,7 @@ def genetic_algorithm(ortam, S, D, bw, pop_size=50, generations=100):
     best_path = None
     best_cost = float('inf')
 
-    #  Evrim Döngüsü
+    # Evrim Döngüsü
     for _ in range(generations):
         new_population = []
 
@@ -145,7 +152,7 @@ def genetic_algorithm(ortam, S, D, bw, pop_size=50, generations=100):
 
         population = new_population
 
-        # Fitness güncelle
+
         fitness = {
             tuple(p): ortam.yol_maliyeti_hesapla(p, istenen_bw=bw)[0]
             for p in population
@@ -154,21 +161,13 @@ def genetic_algorithm(ortam, S, D, bw, pop_size=50, generations=100):
     return best_path, best_cost
 
 
-
-
-
-
-
-#Main
-
-
 if __name__ == "__main__":
 
-    # 1) Ortam oluştur
+
     ortam = AgOrtami()
     ortam.verileri_yukle_ve_agi_kur()
 
-    # 2) Örnek talep
+
     talepler = ortam.talep_listesini_getir()
     talep = talepler[0]
 
@@ -176,34 +175,29 @@ if __name__ == "__main__":
     D = talep["hedef"]
     bw = talep["miktar"]
 
-    # 3) GA çalıştır
+
     best_path, best_cost = genetic_algorithm(
         ortam=ortam,
         S=S,
         D=D,
         bw=bw,
-        pop_size=10,
+        pop_size=50,
         generations=100
     )
 
-    # 4) SADECE SONUÇ YAZDIR
-    print("\n=================== SONUÇ ===================")
 
     if best_path:
-        print("✔ Genetik algoritma başarıyla tamamlandı.")
-        print(f"✔ En iyi yol bulundu ({len(best_path)} düğüm):")
+        print("Genetik algoritma başarıyla tamamlandı.")
+        print(f"En iyi yol bulundu ({len(best_path)} düğüm):")
         print(f"  {best_path}")
-        print(f"✔ Toplam Fitness (Maliyet): {best_cost:.4f}")
+        print(f"Toplam Fitness : {best_cost:.4f}")
 
         _, delay, reliability, resource_cost = ortam.yol_maliyeti_hesapla(
             best_path, istenen_bw=bw
         )
-
-        print("\n--- Yolun Detaylı Metrikleri ---")
-        print(f"⏱ Gecikme        : {delay:.2f} ms")
-        print(f"🛡 Güvenilirlik  : {reliability:.4f}")
-        print(f"💰 Kaynak Maliyeti: {resource_cost:.2f}")
+        print(f"Gecikme        : {delay:.2f} ms")
+        print(f"Güvenilirlik  : {reliability:.4f}")
+        print(f"Kaynak Maliyeti: {resource_cost:.2f}")
     else:
         print("✖ Uygun bir yol bulunamadı.")
 
-    print("============================================")
