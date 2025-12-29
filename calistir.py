@@ -1,11 +1,11 @@
 # Q LEARNING PARAMETRELERI
 from genetik_algoritma import genetic_algorithm
 import tabusearch
-EPSILON = 20.0
+EPSILON = 5.0
 EPSILON_MIN = 0.1
 EPSILON_DECAY = 0.998
 MAX_STEPS = 50
-EPISODE = 500
+EPISODE = 1500
 ALPHA = 0.9
 GAMMA = 0.9
 ############################
@@ -15,7 +15,7 @@ import q_learning
 
 if __name__ == "__main__":
     talepler = network_model.AgOrtami().talep_listesini_getir()
-    deneme_talep = talepler[0]
+    deneme_talep = talepler[12]
     KAYNAK = deneme_talep['kaynak']
     HEDEF = deneme_talep['hedef']
     GEREKLI_BANDWIDTH = deneme_talep['miktar']
@@ -42,19 +42,16 @@ if __name__ == "__main__":
 
     #################################################
 
-    # Main
+#TABU SEARCH BOLUMU
 
-if __name__ == "__main__":
 
     ortam = network_model.AgOrtami()
     ortam.verileri_yukle_ve_agi_kur()
 
-    talepler = ortam.talep_listesini_getir()
-    talep = talepler[0]
 
-    S = talep["kaynak"]
-    D = talep["hedef"]
-    bw = talep["miktar"]
+    S = KAYNAK
+    D = HEDEF
+    bw = GEREKLI_BANDWIDTH
 
     best_path, best_cost = genetic_algorithm(
         ortam=ortam,
@@ -102,3 +99,4 @@ if tabu_path:
 else:
     print("HATA: Tabu Search bir yol bulamadı!")
 print("="*20)
+#########################################################################################################################
